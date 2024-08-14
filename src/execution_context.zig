@@ -14,7 +14,7 @@ extern "c" fn setcontext(ucp: *ucontext_t) callconv(.C) c_int;
 pub const ExecutionContext = struct {
     uctx: ucontext_t,
 
-    pub fn make(allocation: []u8, func: *const anyopaque, arg: *void) !ExecutionContext {
+    pub fn new(allocation: []u8, func: *const anyopaque, arg: *void) !ExecutionContext {
         var uctx = ucontext_t{};
 
         const err = getcontext(&uctx);
@@ -41,7 +41,7 @@ pub const ExecutionContext = struct {
         }
     }
 
-    pub fn setTo(_: *ExecutionContext, other: *ExecutionContext) !void {
+    pub fn exit(other: *ExecutionContext) !void {
         const ret = setcontext(&other.uctx);
         if (ret != 0) {
             std.debug.print("ret = {}, c.errno = {}\n", .{ ret, std.c._errno().* });
