@@ -1,13 +1,21 @@
 const std = @import("std");
 
-const ec = @import("execution_context.zig");
-const sc = @import("stackful_coroutine.zig");
+const Fiber = @import("fiber.zig").Fiber;
+const Scheduler = @import("scheduler.zig").Scheduler;
 
 pub fn main() !void {
-    var allocator = std.heap.page_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        //fail test; can't try in defer as defer is executed after we return
+        if (deinit_status == .leak) std.testing.expect(false) catch @panic("TEST FAIL");
+    }
 
-    const co0 = try sc.StackfulCoroutine.new(&allocator, struct {
-        pub fn f(yh: *sc.YieldHandle) void {
+    var scheduler = Scheduler.new();
+
+    const f0 = try Fiber.new(&allocator, struct {
+        pub fn f(yh: *Fiber.YieldHandle) void {
             std.debug.print("One\n", .{});
             yh.yield();
             std.debug.print("Two\n", .{});
@@ -16,14 +24,21 @@ pub fn main() !void {
         }
     }.f);
 
-    defer co0.destroy();
+    const f1 = try Fiber.new(&allocator, struct {
+        pub fn f(yh: *Fiber.YieldHandle) void {
+            std.debug.print("Raz\n", .{});
+            yh.yield();
+            std.debug.print("Dva\n", .{});
+            yh.yield();
+            std.debug.print("Tri\n", .{});
+        }
+    }.f);
 
-    std.debug.print("Raz\n", .{});
-    co0.next();
-    std.debug.print("Dva\n", .{});
-    co0.next();
-    std.debug.print("Tri\n", .{});
-    co0.next();
+    std.debug.print("Schedule\n", .{});
+    scheduler.schedule(f0);
+    scheduler.schedule(f1);
+
+    scheduler.run();
 
     std.debug.print("Oplya\n", .{});
 }
