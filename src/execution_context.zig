@@ -34,19 +34,19 @@ pub const ExecutionContext = struct {
         return ExecutionContext{ .uctx = uctx };
     }
 
-    pub fn switchTo(this: *ExecutionContext, other: *ExecutionContext) !void {
+    pub fn switchTo(this: *ExecutionContext, other: *ExecutionContext) void {
         const ret = swapcontext(&this.uctx, &other.uctx);
         if (ret != 0) {
             std.debug.print("ret = {}, c.errno = {}\n", .{ ret, std.c._errno().* });
-            return error.FailedToSwitchContext;
+            @panic("failed to switch context");
         }
     }
 
-    pub fn exit(other: *ExecutionContext) !void {
+    pub fn exit(other: *ExecutionContext) void {
         const ret = setcontext(&other.uctx);
         if (ret != 0) {
             std.debug.print("ret = {}, c.errno = {}\n", .{ ret, std.c._errno().* });
-            return error.FailedToSetContext;
+            @panic("failed to set context");
         }
     }
 };

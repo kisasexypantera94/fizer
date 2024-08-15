@@ -31,7 +31,7 @@ pub const Fiber = struct {
                 fiber_.next_action = NextAction.Destroy;
 
                 // I guess we can assume that the user always wants to return to the caller's ctx.
-                ExecutionContext.exit(&fiber_.caller_ctx) catch {};
+                ExecutionContext.exit(&fiber_.caller_ctx);
             }
         }.f;
 
@@ -67,17 +67,17 @@ pub const Fiber = struct {
             return;
         }
 
-        try self.caller_ctx.switchTo(&self.ctx);
+        self.caller_ctx.switchTo(&self.ctx);
     }
 
-    pub fn yield(self: *Fiber) !void {
+    pub fn yield(self: *Fiber) void {
         self.next_action = NextAction.Reschedule;
-        try self.ctx.switchTo(&self.caller_ctx);
+        self.ctx.switchTo(&self.caller_ctx);
     }
 
-    pub fn teleportTo(self: *Fiber, scheduler: *Scheduler) !void {
+    pub fn teleportTo(self: *Fiber, scheduler: *Scheduler) void {
         self.next_action = NextAction{ .Teleport = scheduler };
-        try self.ctx.switchTo(&self.caller_ctx);
+        self.ctx.switchTo(&self.caller_ctx);
     }
 
     pub const NextAction = union(enum) {
