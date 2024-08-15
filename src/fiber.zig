@@ -42,7 +42,7 @@ pub const Fiber = struct {
         capture.* = args;
 
         fiber.allocator = allocator;
-        fiber.capture = @ptrCast(capture);
+        fiber.capture = capture;
         fiber.capture_free = struct {
             fn f(me: *Fiber) void {
                 me.allocator.destroy(@as(*ArgsType, @ptrCast(@alignCast(me.capture))));
@@ -50,7 +50,7 @@ pub const Fiber = struct {
         }.f;
         fiber.stack = undefined;
         fiber.caller_ctx = undefined;
-        fiber.ctx = try ExecutionContext.new(&fiber.stack, trampoline, @ptrCast(@constCast(&func)), @ptrCast(fiber));
+        fiber.ctx = try ExecutionContext.new(&fiber.stack, trampoline, &func, fiber);
         fiber.next_action = NextAction.Reschedule;
 
         return fiber;
