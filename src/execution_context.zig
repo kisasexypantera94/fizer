@@ -22,8 +22,8 @@ pub const ExecutionContext = struct {
             return error.FailedToGetContext;
         }
 
-        uctx.uc_stack.ss_size = allocation.len;
         uctx.uc_stack.ss_sp = allocation.ptr;
+        uctx.uc_stack.ss_size = allocation.len;
 
         // makecontext wants arguments as 32-bit ints,
         // so we have to split the 64-bit pointer into lo and hi

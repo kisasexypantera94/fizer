@@ -12,10 +12,10 @@ pub const Scheduler = struct {
         };
     }
 
-    pub fn run(self: *Scheduler) void {
+    pub fn run(self: *Scheduler) !void {
         while (self.queue.count > 0) {
             const f = self.queue.readItem().?;
-            f.next();
+            try f.next();
 
             if (f.is_completed) {
                 f.destroy();

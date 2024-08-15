@@ -24,7 +24,9 @@ pub const Fiber = struct {
                 const args_: *@TypeOf(args) = @ptrCast(@alignCast(fiber_.capture));
 
                 var yieldHandle = YieldHandle{ .fiber = fiber_ };
-                @call(.auto, func_, .{&yieldHandle} ++ args_.*);
+                @call(.auto, func_, .{&yieldHandle} ++ args_.*) catch |err| {
+                    std.debug.print("unexpected error: {}", .{err});
+                };
 
                 fiber_.is_completed = true;
 
@@ -56,23 +58,23 @@ pub const Fiber = struct {
     }
 
     // Since 'resume' is a keyword, let's stick to an iterator-like interface.
-    pub fn next(self: *Fiber) void {
+    pub fn next(self: *Fiber) !void {
         if (self.is_completed) {
             return;
         }
 
-        self.caller_ctx.switchTo(&self.ctx) catch {};
+        try self.caller_ctx.switchTo(&self.ctx);
     }
 
-    fn yield(self: *Fiber) void {
-        self.ctx.switchTo(&self.caller_ctx) catch {};
+    fn yield(self: *Fiber) !void {
+        try self.ctx.switchTo(&self.caller_ctx);
     }
 
     pub const YieldHandle = struct {
         fiber: *Fiber,
 
-        pub fn yield(self: *YieldHandle) void {
-            self.fiber.yield();
+        pub fn yield(self: *YieldHandle) !void {
+            try self.fiber.yield();
         }
     };
 };
