@@ -14,7 +14,7 @@ extern "c" fn setcontext(ucp: *ucontext_t) callconv(.C) c_int;
 pub const ExecutionContext = struct {
     uctx: ucontext_t,
 
-    pub fn new(allocation: []u8, func: *const anyopaque, arg: *void) !ExecutionContext {
+    pub fn new(allocation: []u8, trampoline: *const anyopaque, func: *const anyopaque, args: *anyopaque) !ExecutionContext {
         var uctx = ucontext_t{};
 
         const err = getcontext(&uctx);
@@ -27,8 +27,9 @@ pub const ExecutionContext = struct {
 
         // makecontext wants arguments as 32-bit ints,
         // so we have to split the 64-bit pointer into lo and hi
-        const args: [2]u32 = @bitCast(@intFromPtr(arg));
-        makecontext(&uctx, func, 2, args[0], args[1]);
+        const func_split: [2]u32 = @bitCast(@intFromPtr(func));
+        const args_split: [2]u32 = @bitCast(@intFromPtr(args));
+        makecontext(&uctx, trampoline, 4, func_split[0], func_split[1], args_split[0], args_split[1]);
 
         return ExecutionContext{ .uctx = uctx };
     }
