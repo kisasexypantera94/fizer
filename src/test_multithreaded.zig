@@ -2,15 +2,14 @@ const std = @import("std");
 const Scheduler = @import("scheduler.zig").Scheduler;
 const Fiber = @import("fiber.zig").Fiber;
 const Strand = @import("strand.zig").Strand;
+const AtomicOrder = @import("std").builtin.AtomicOrder;
+const AtomicRmwOp = @import("std").builtin.AtomicRmwOp;
+const WaitGroup = @import("std").Thread.WaitGroup;
 
-fn runScheduler(scheduler: *Scheduler) void {
-    std.debug.print("Run\n", .{});
-
-    const start = std.time.nanoTimestamp();
-    scheduler.run() catch {};
-    const end = std.time.nanoTimestamp();
-
-    std.debug.print("Done, elapsed=[{}]\n", .{@divTrunc(end - start, std.time.ns_per_us)});
+fn runScheduler(scheduler: *Scheduler, cnt: *i32) void {
+    while (@atomicLoad(i32, cnt, AtomicOrder.seq_cst) > 0) {
+        scheduler.run() catch {};
+    }
 }
 
 test "multithreaded" {
@@ -28,51 +27,55 @@ test "multithreaded" {
 
     var strand = Strand.new(&schedulers);
 
+    const num_iters = 16384;
+    var x0: i32 = 0;
+    var x1: i32 = 0;
     var y: i32 = 0;
 
+    var cnt: i32 = 2;
+
     const f0 = try Fiber.new(&allocator, struct {
-        pub fn f(me: *Fiber, x: i32, y_ptr: *i32) !void {
-            std.debug.print("Hello from f0, x={}\n", .{x});
+        pub fn f(me: *Fiber, x0_ptr: *i32, y_ptr: *i32, strand_: *Strand, cnt_: *i32) !void {
+            defer _ = @atomicRmw(i32, cnt_, AtomicRmwOp.Sub, 1, AtomicOrder.seq_cst);
 
-            std.debug.print("One\n", .{});
-            me.yield();
+            for (0..num_iters) |_| {
+                x0_ptr.* += 1;
 
-            std.debug.print("Two\n", .{});
-            me.yield();
+                {
+                    var uh = strand_.lock(me);
+                    defer uh.unlock();
 
-            std.debug.print("Three\n", .{});
-
-            y_ptr.* += 1;
+                    y_ptr.* += 1;
+                }
+            }
         }
-    }.f, .{ 123, &y });
+    }.f, .{ &x0, &y, &strand, &cnt });
 
     const f1 = try Fiber.new(&allocator, struct {
-        pub fn f(me: *Fiber, x: i32, y_ptr: *i32, strand_: *Strand) !void {
-            std.debug.print("Hello from f1, x={}\n", .{x});
+        pub fn f(me: *Fiber, x1_ptr: *i32, y_ptr: *i32, strand_: *Strand, cnt_: *i32) !void {
+            defer _ = @atomicRmw(i32, cnt_, AtomicRmwOp.Sub, 1, AtomicOrder.seq_cst);
 
-            std.debug.print("Raz\n", .{});
+            for (0..num_iters) |_| {
+                x1_ptr.* += 1;
 
-            {
-                var uh = strand_.lock(me);
-                defer uh.unlock();
+                {
+                    var uh = strand_.lock(me);
+                    defer uh.unlock();
 
-                std.debug.print("Dva\n", .{});
-                me.yield();
+                    y_ptr.* += 1;
+                }
             }
-
-            std.debug.print("Tri\n", .{});
-
-            y_ptr.* += 1;
         }
-    }.f, .{ 321, &y, &strand });
+    }.f, .{ &x1, &y, &strand, &cnt });
 
-    std.debug.print("Schedule\n", .{});
     scheduler0.schedule(f0);
     scheduler0.schedule(f1);
 
-    var thread0 = try std.Thread.spawn(.{}, runScheduler, .{&scheduler0});
-    thread0.join();
+    var thread0 = try std.Thread.spawn(.{}, runScheduler, .{ &scheduler0, &cnt });
+    var thread1 = try std.Thread.spawn(.{}, runScheduler, .{ &scheduler1, &cnt });
 
-    var thread1 = try std.Thread.spawn(.{}, runScheduler, .{&scheduler1});
+    thread0.join();
     thread1.join();
+
+    try std.testing.expect(y == num_iters * 2);
 }

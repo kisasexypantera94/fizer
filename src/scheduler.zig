@@ -3,7 +3,7 @@ const Fiber = @import("fiber.zig").Fiber;
 const Mutex = std.Thread.Mutex;
 
 pub const Scheduler = struct {
-    const FifoType = std.fifo.LinearFifo(*Fiber, std.fifo.LinearFifoBufferType{ .Static = 1024 });
+    const FifoType = std.fifo.LinearFifo(*Fiber, std.fifo.LinearFifoBufferType{ .Static = 16384 });
 
     queue: FifoType,
     mtx: Mutex,
@@ -17,7 +17,12 @@ pub const Scheduler = struct {
 
     pub fn run(self: *Scheduler) !void {
         while (self.queue.count > 0) {
-            const f = self.queue.readItem().?;
+            self.mtx.lock();
+            const f_opt = self.queue.readItem();
+            self.mtx.unlock();
+
+            const f = f_opt.?;
+
             try f.next();
 
             switch (f.next_action) {
