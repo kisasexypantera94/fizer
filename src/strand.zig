@@ -3,13 +3,13 @@ const Fiber = @import("fiber.zig").Fiber;
 const Mutex = @import("std").Thread.Mutex;
 
 pub const Strand = struct {
-    schedulers: []*Scheduler,
+    schedulers: []Scheduler,
     lock_scheduler_idx: usize,
     unlock_scheduler_idx: usize,
     mtx: Mutex,
     lock_cnt: usize,
 
-    pub fn new(schedulers: []*Scheduler) Strand {
+    pub fn new(schedulers: []Scheduler) Strand {
         return .{
             .schedulers = schedulers,
             .lock_scheduler_idx = 0,
@@ -21,7 +21,7 @@ pub const Strand = struct {
 
     pub fn lock(self: *Strand, fiber: *Fiber) UnlockHandle {
         self.mtx.lock();
-        const scheduler = self.schedulers[self.lock_scheduler_idx];
+        const scheduler = &self.schedulers[self.lock_scheduler_idx];
         self.lock_cnt += 1;
         self.mtx.unlock();
 
@@ -46,7 +46,7 @@ pub const Strand = struct {
             self.unlock_scheduler_idx %= self.schedulers.len;
         }
 
-        fiber.teleportTo(self.schedulers[self.unlock_scheduler_idx]);
+        fiber.teleportTo(&self.schedulers[self.unlock_scheduler_idx]);
     }
 
     const UnlockHandle = struct {
