@@ -5,8 +5,8 @@ const Strand = @import("strand.zig").Strand;
 const AtomicOrder = @import("std").builtin.AtomicOrder;
 const AtomicRmwOp = @import("std").builtin.AtomicRmwOp;
 
-fn runScheduler(scheduler: *Scheduler, cnt: *i32) void {
-    while (@atomicLoad(i32, cnt, AtomicOrder.seq_cst) > 0) {
+fn runScheduler(scheduler: *Scheduler, cnt: *usize) void {
+    while (@atomicLoad(usize, cnt, AtomicOrder.seq_cst) > 0) {
         scheduler.run() catch {};
     }
 }
@@ -27,10 +27,11 @@ test "multithreaded" {
         s.* = Scheduler.new();
     }
 
-    const num_iters = 1e5;
+    const num_iters: usize = 1e3;
     var strand = Strand.new(schedulers);
-    var y: i32 = 0;
-    var cnt: i32 = 2;
+    var y: usize = 0;
+    const num_fibers: usize = 1e3;
+    var cnt: usize = num_fibers;
 
     var common = .{
         .strand = &strand,
@@ -38,9 +39,9 @@ test "multithreaded" {
         .cnt = &cnt,
     };
 
-    const f0 = try Fiber.new(&allocator, struct {
+    const routine = struct {
         pub fn f(me: *Fiber, common_: *@TypeOf(common)) !void {
-            defer _ = @atomicRmw(i32, common_.cnt, AtomicRmwOp.Sub, 1, AtomicOrder.seq_cst);
+            defer _ = @atomicRmw(usize, common_.cnt, AtomicRmwOp.Sub, 1, AtomicOrder.seq_cst);
 
             for (0..num_iters) |_| {
                 var uh = common_.strand.lock(me);
@@ -49,23 +50,15 @@ test "multithreaded" {
                 common_.y.* += 1;
             }
         }
-    }.f, .{&common});
+    }.f;
 
-    const f1 = try Fiber.new(&allocator, struct {
-        pub fn f(me: *Fiber, common_: *@TypeOf(common)) !void {
-            defer _ = @atomicRmw(i32, common_.cnt, AtomicRmwOp.Sub, 1, AtomicOrder.seq_cst);
+    const fibers = try allocator.alloc(*Fiber, num_fibers);
+    defer allocator.free(fibers);
 
-            for (0..num_iters) |_| {
-                var uh = common_.strand.lock(me);
-                defer uh.unlock();
-
-                common_.y.* += 1;
-            }
-        }
-    }.f, .{&common});
-
-    schedulers[0].schedule(f0);
-    schedulers[0].schedule(f1);
+    for (fibers) |*f| {
+        f.* = try Fiber.new(&allocator, routine, .{&common});
+        schedulers[0].schedule(f.*);
+    }
 
     var threads = std.ArrayList(std.Thread).init(allocator);
     defer threads.clearAndFree();
@@ -78,5 +71,7 @@ test "multithreaded" {
         t.join();
     }
 
-    try std.testing.expect(y == num_iters * 2);
+    std.debug.print("Y=[{}]\n", .{y});
+
+    try std.testing.expect(y == num_iters * num_fibers);
 }
