@@ -24,6 +24,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
+    lib.root_module.addImport("xev", xev.module("xev"));
+
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
     // running `zig build`).
@@ -74,11 +77,16 @@ pub fn build(b: *std.Build) void {
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
+    const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
+
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
+        .filters = test_filters,
     });
+
+    exe_unit_tests.root_module.addImport("xev", xev.module("xev"));
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
     run_exe_unit_tests.has_side_effects = true;
