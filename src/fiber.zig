@@ -6,12 +6,16 @@ const stack_size = 16384;
 
 pub const Fiber = struct {
     allocator: *std.mem.Allocator,
+
     stack: [stack_size]u8,
-    capture: *anyopaque,
-    capture_free: *const fn (*Fiber) void,
     caller_ctx: ExecutionContext,
     ctx: ExecutionContext,
-    next_action: NextAction,
+
+    capture: *anyopaque,
+    capture_free: *const fn (*Fiber) void,
+
+    after_yield_func: *const fn (*Fiber, *Scheduler, *anyopaque) void,
+    after_yield_capture: *anyopaque,
 
     pub fn new(allocator: *std.mem.Allocator, func: anytype, args: anytype) !*Fiber {
         const FuncType = @TypeOf(func);
@@ -28,10 +32,20 @@ pub const Fiber = struct {
                     std.debug.print("unexpected error: {}", .{err});
                 };
 
-                fiber_.next_action = NextAction.Destroy;
+                fiber_.after_yield_func = struct {
+                    fn f(me: *Fiber, _: *Scheduler, _: *anyopaque) void {
+                        me.destroy();
+                    }
+                }.f;
 
                 // I guess we can assume that the user always wants to return to the caller's ctx.
                 ExecutionContext.exit(&fiber_.caller_ctx);
+            }
+        }.f;
+
+        const capture_free = struct {
+            fn f(me: *Fiber) void {
+                me.allocator.destroy(@as(*ArgsType, @ptrCast(@alignCast(me.capture))));
             }
         }.f;
 
@@ -42,16 +56,13 @@ pub const Fiber = struct {
         capture.* = args;
 
         fiber.allocator = allocator;
-        fiber.capture = capture;
-        fiber.capture_free = struct {
-            fn f(me: *Fiber) void {
-                me.allocator.destroy(@as(*ArgsType, @ptrCast(@alignCast(me.capture))));
-            }
-        }.f;
         fiber.stack = undefined;
         fiber.caller_ctx = undefined;
         fiber.ctx = try ExecutionContext.new(&fiber.stack, trampoline, &func, fiber);
-        fiber.next_action = NextAction.Reschedule;
+        fiber.capture = capture;
+        fiber.capture_free = capture_free;
+        fiber.after_yield_func = undefined;
+        fiber.after_yield_capture = undefined;
 
         return fiber;
     }
@@ -63,26 +74,29 @@ pub const Fiber = struct {
 
     // Since 'resume' is a keyword, let's stick to an iterator-like interface.
     pub fn next(self: *Fiber) !void {
-        if (self.next_action == NextAction.Destroy) {
-            return;
-        }
-
         self.caller_ctx.switchTo(&self.ctx);
     }
 
     pub fn yield(self: *Fiber) void {
-        self.next_action = NextAction.Reschedule;
+        self.after_yield_func = struct {
+            fn f(me: *Fiber, scheduler: *Scheduler, _: *anyopaque) void {
+                scheduler.schedule(me);
+            }
+        }.f;
+
         self.ctx.switchTo(&self.caller_ctx);
     }
 
     pub fn teleportTo(self: *Fiber, scheduler: *Scheduler) void {
-        self.next_action = NextAction{ .Teleport = scheduler };
+        self.after_yield_func = struct {
+            fn f(me: *Fiber, _: *Scheduler, args: *anyopaque) void {
+                const scheduler_: *Scheduler = @ptrCast(@alignCast(args));
+                scheduler_.schedule(me);
+            }
+        }.f;
+
+        self.after_yield_capture = scheduler;
+
         self.ctx.switchTo(&self.caller_ctx);
     }
-
-    pub const NextAction = union(enum) {
-        Reschedule,
-        Teleport: *Scheduler,
-        Destroy,
-    };
 };

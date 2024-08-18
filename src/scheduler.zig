@@ -25,11 +25,7 @@ pub const Scheduler = struct {
 
             try f.next();
 
-            switch (f.next_action) {
-                .Reschedule => self.schedule(f),
-                .Teleport => |to| to.schedule(f),
-                .Destroy => f.destroy(),
-            }
+            f.after_yield_func(f, self, f.after_yield_capture);
         }
     }
 
