@@ -3,7 +3,6 @@ const Scheduler = @import("scheduler.zig").Scheduler;
 const Fiber = @import("fiber.zig").Fiber;
 const xev = @import("xev");
 const TcpConnection = @import("tcp_connection.zig").TcpConnection;
-const tcp_connect = @import("tcp_connection.zig").tcp_connect;
 
 test "tcp" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -16,14 +15,7 @@ test "tcp" {
 
     var scheduler = Scheduler.new();
 
-    var thread_pool = xev.ThreadPool.init(.{});
-    defer thread_pool.deinit();
-    defer thread_pool.shutdown();
-
-    var loop = try xev.Loop.init(.{
-        .entries = std.math.pow(u13, 2, 12),
-        .thread_pool = &thread_pool,
-    });
+    var loop = try xev.Loop.init(.{});
     defer loop.deinit();
 
     var stop = false;
@@ -35,8 +27,13 @@ test "tcp" {
             std.debug.print("Connected!\n", .{});
 
             std.debug.print("Writing\n", .{});
-            conn.write(&[_]u8{ 72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 33 }, me);
+            conn.write("Hello world!", me);
             std.debug.print("Done!\n", .{});
+
+            std.debug.print("Reading\n", .{});
+            var buf: [256]u8 = undefined;
+            const n = conn.read(&buf, me);
+            std.debug.print("Done: buf=[{s}]\n", .{buf[0..n]});
 
             stop_.* = true;
         }
