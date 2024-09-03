@@ -4,6 +4,11 @@ Fizer is a lightweight fibers library for Zig, focused on delivering elegant and
 ## Usage
 - [Singlethreaded](src/test_singlethreaded.zig)
 - [Multithreaded](src/test_multithreaded.zig)
+- [TCP](src/test_tcp.zig)
+
+```bash
+zig build test -Dtest-filter=multi
+```
 
 ## References
 - [oatz](https://github.com/SuperAuguste/oatz)

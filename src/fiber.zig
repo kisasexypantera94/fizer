@@ -11,8 +11,7 @@ pub const Fiber = struct {
     caller_ctx: ExecutionContext,
     ctx: ExecutionContext,
 
-    capture: *anyopaque,
-    capture_free: *const fn (*Fiber) void,
+    free: *const fn (*Fiber) void,
 
     after_yield_func: *const fn (*Fiber, *Scheduler, *anyopaque) void,
     after_yield_capture: *anyopaque,
@@ -21,14 +20,25 @@ pub const Fiber = struct {
         const FuncType = @TypeOf(func);
         const ArgsType = @TypeOf(args);
 
+        const FiberClosure = struct {
+            fiber: Fiber,
+            capture: ArgsType,
+        };
+
+        const free = struct {
+            fn f(me: *Fiber) void {
+                me.allocator.destroy(@as(*FiberClosure, @ptrCast(me)));
+            }
+        }.f;
+
         const trampoline = struct {
             fn f(func_lo: u32, func_hi: u32, fiber_lo: u32, fiber_hi: u32) callconv(.C) void {
                 const func_: *const FuncType = @ptrFromInt(@as(usize, @bitCast([2]u32{ func_lo, func_hi })));
-                const fiber_: *Fiber = @ptrFromInt(@as(usize, @bitCast([2]u32{ fiber_lo, fiber_hi })));
+                const closure: *FiberClosure = @ptrFromInt(@as(usize, @bitCast([2]u32{ fiber_lo, fiber_hi })));
 
-                const args_: *ArgsType = @ptrCast(@alignCast(fiber_.capture));
+                const fiber_ = &closure.fiber;
 
-                @call(.auto, func_, .{fiber_} ++ args_.*) catch |err| {
+                @call(.auto, func_, .{fiber_} ++ closure.capture) catch |err| {
                     std.debug.print("unexpected error: {}", .{err});
                 };
 
@@ -43,33 +53,25 @@ pub const Fiber = struct {
             }
         }.f;
 
-        const capture_free = struct {
-            fn f(me: *Fiber) void {
-                me.allocator.destroy(@as(*ArgsType, @ptrCast(@alignCast(me.capture))));
-            }
-        }.f;
-
         // This way, fibers can be safely moved between threads
-        var fiber = try allocator.create(Fiber);
+        var closure = try allocator.create(FiberClosure);
 
-        const capture = try allocator.create(ArgsType);
-        capture.* = args;
-
+        var fiber = &closure.fiber;
         fiber.allocator = allocator;
         fiber.stack = undefined;
         fiber.caller_ctx = undefined;
-        fiber.ctx = try ExecutionContext.new(&fiber.stack, trampoline, &func, fiber);
-        fiber.capture = capture;
-        fiber.capture_free = capture_free;
+        fiber.ctx = try ExecutionContext.new(&fiber.stack, trampoline, &func, closure);
+        fiber.free = free;
         fiber.after_yield_func = undefined;
         fiber.after_yield_capture = undefined;
+
+        closure.capture = args;
 
         return fiber;
     }
 
     pub fn destroy(self: *Fiber) void {
-        self.capture_free(self);
-        self.allocator.destroy(self);
+        self.free(self);
     }
 
     // Since 'resume' is a keyword, let's stick to an iterator-like interface.
